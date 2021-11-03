@@ -81,15 +81,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dev-dependencies]
 criterion = "0.3"
+npyz = { version = "0.6", features = ["complex"] }
 
 [[bench]]
-name = "bench_ceres"
+name = "bench_opt"
 harness = false
 
-[[bench]]
-name = "bench_qfactor"
-harness = false
-
+[[bin]]
+name = "crash_test"
+path = "src/main.rs"
 
 [profile.release]
 lto = "fat"

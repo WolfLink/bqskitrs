@@ -114,11 +114,12 @@ impl CeresSolver {
     ) where
         R: FnMut(&[f64], &mut [f64], Option<&mut [f64]>),
     {
-        let data = &mut ClosureData {
+        let data_ref = &mut ClosureData {
             cost_fn: residual_function,
             nparams: x0.len(),
             nresiduals: num_residuals,
-        } as *mut ClosureData as *mut c_void;
+        };
+        let data = data_ref as *mut ClosureData as *mut c_void;
         let mut x_ptr = x0.as_mut_ptr();
         // Safety: problem already initialized in new(), data lives as long as function lifetime, as does x_ptr
         unsafe {
