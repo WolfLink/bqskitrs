@@ -1,5 +1,10 @@
 use crate::{
-    gates::{Gradient, Unitary},
+    gates::{Gate, Gradient, Unitary},
+    instantiators::{Instantiate, QFactorInstantiator},
+    minimizers::{
+        BfgsJacSolver, CeresJacSolver, CostFunction, HilbertSchmidtCostFn,
+        HilbertSchmidtResidualFn, Minimizer, ResidualFunction,
+    },
     operation::Operation,
     permutation_matrix::calc_permutation_matrix,
     unitary_builder::UnitaryBuilder,
@@ -7,9 +12,15 @@ use crate::{
 
 use itertools::izip;
 
-use ndarray::{Array2, Array3};
+use ndarray::{Array2, Array3, ArrayView2};
 use num_complex::Complex64;
 use squaremat::*;
+
+pub enum Instantiators {
+    QFactor,
+    Ceres,
+    BFGS,
+}
 
 /// A list of gates in a quantum circuit
 #[derive(Clone)]
@@ -19,6 +30,9 @@ pub struct Circuit {
     pub ops: Vec<Operation>,
     pub constant_gates: Vec<Array2<Complex64>>,
 }
+
+unsafe impl Send for Circuit {}
+unsafe impl Sync for Circuit {}
 
 impl Circuit {
     pub fn new(
@@ -49,6 +63,46 @@ impl Circuit {
             let parameters = &params[param_idx..param_idx + op.num_params()];
             op.params.copy_from_slice(parameters);
             param_idx += op.num_params();
+        }
+    }
+
+    pub fn append_gate(&mut self, gate: Gate, location: Vec<usize>, params: Option<Vec<f64>>) {
+        let params = if let Some(params) = params {
+            params
+        } else {
+            let num_params = gate.num_params();
+            vec![0.; num_params]
+        };
+        self.append(Operation::new(gate, location, params));
+    }
+
+    pub fn append(&mut self, op: Operation) {
+        self.ops.push(op)
+    }
+
+    pub fn instantiate(
+        &mut self,
+        target: Array2<Complex64>,
+        x0: &[f64],
+        instantiator: Instantiators,
+    ) {
+        match instantiator {
+            Instantiators::QFactor => {
+                let inst = QFactorInstantiator::default();
+                self.set_params(&inst.instantiate(self.clone(), target, x0));
+            }
+            Instantiators::Ceres => {
+                let minimizer = CeresJacSolver::new(1, 5e-16, 1e-15, false);
+                let cost_fn = HilbertSchmidtResidualFn::new(self.clone(), target);
+                self.set_params(
+                    &minimizer.minimize(&ResidualFunction::HilbertSchmidt(cost_fn), x0),
+                );
+            }
+            Instantiators::BFGS => {
+                let minimizer = BfgsJacSolver::new(10);
+                let cost_fn = HilbertSchmidtCostFn::new(self.clone(), target);
+                self.set_params(&minimizer.minimize(&CostFunction::HilbertSchmidt(cost_fn), x0));
+            }
         }
     }
 }

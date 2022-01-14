@@ -1,5 +1,6 @@
-use ndarray::{s, Array1, Array2, Array3, ArrayView2, ArrayView3, ArrayView4, Ix2};
+use ndarray::{s, stack, Array1, Array2, Array3, ArrayView2, ArrayView3, ArrayView4, Axis, Ix2};
 use ndarray_einsum_beta::einsum;
+use ndarray_stats::CorrelationExt;
 use num_complex::Complex64;
 use squaremat::*;
 
@@ -8,6 +9,14 @@ use crate::{i, r};
 use std::f64::consts::{E, PI};
 
 use itertools::Itertools;
+
+pub fn log<const T: usize>(x: usize) -> u32 {
+    let mut e = 1;
+    while T.pow(e) < x {
+        e += 1
+    }
+    e
+}
 
 pub fn trace(arr: ArrayView4<Complex64>) -> Array2<Complex64> {
     let mut out = Array2::<Complex64>::zeros((arr.shape()[2], arr.shape()[3]));
@@ -32,6 +41,24 @@ pub fn argsort(v: Vec<usize>) -> Vec<usize> {
         .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
         .map(|(idx, _a)| idx)
         .collect()
+}
+
+/// Calculate the linear regression of x and y, returning the slope and intercept
+pub fn linregress(x: Array1<f64>, y: Array1<f64>) -> Result<(f64, f64), ()> {
+    let xmean = x.iter().sum::<f64>() / x.len() as f64;
+    let ymean = y.iter().sum::<f64>() / x.len() as f64;
+    let m = stack![Axis(1), x, y];
+    let mcov = m.cov(0.).unwrap();
+    let cov = Array1::from_iter(mcov.iter());
+    let ssxm = *cov[0];
+    let ssxym = *cov[1];
+    if ssxm != 0. {
+        let slope = ssxym as f64 / ssxm as f64;
+        let intercept = ymean - slope * xmean;
+        Ok((slope, intercept))
+    } else {
+        Err(())
+    }
 }
 
 pub fn matrix_distance_squared(a: ArrayView2<Complex64>, b: ArrayView2<Complex64>) -> f64 {
@@ -97,4 +124,30 @@ pub fn matrix_residuals_jac(
 pub fn qft(n: usize) -> Array2<Complex64> {
     let root = r!(E).powc(i!(2f64) * PI / n as f64);
     Array2::from_shape_fn((n, n), |(x, y)| root.powf((x * y) as f64)) / (n as f64).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::linregress;
+    use ndarray::Array1;
+    use proptest::prelude::*;
+
+    fn gen_x_y() -> impl Strategy<Value = (Array1<f64>, Array1<f64>)> {
+        (2..1000).prop_flat_map(|size| {
+            (0f64..1000f64).prop_flat_map(move |upper| {
+                (
+                    Just(Array1::linspace(0f64, 1000f64, size as usize)),
+                    Just(Array1::linspace(-1000f64, upper, size as usize)),
+                )
+            })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn linregress_test((x, y) in gen_x_y()) {
+            let (slope, intercept) = linregress(x.clone(), y.clone()).unwrap();
+            assert!(slope * x[x.len() / 2] + intercept - y[y.len() / 2] < 1e-10);
+        }
+    }
 }

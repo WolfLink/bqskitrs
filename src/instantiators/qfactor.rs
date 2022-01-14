@@ -18,6 +18,20 @@ pub struct QFactorInstantiator {
     reinit_delay: usize,
 }
 
+impl Default for QFactorInstantiator {
+    fn default() -> Self {
+        QFactorInstantiator {
+            diff_tol_a: 1e-12,
+            diff_tol_r: 1e-6,
+            dist_tol: 1e-16,
+            max_iters: 100000,
+            min_iters: 1000,
+            //slowdown_factor: slowdown_factor.unwrap_or(0.0),
+            reinit_delay: 40,
+        }
+    }
+}
+
 impl QFactorInstantiator {
     pub fn new(
         diff_tol_a: Option<f64>,

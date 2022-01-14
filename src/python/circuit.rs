@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::circuit::Circuit;
 use crate::gates::Gradient;
@@ -51,7 +51,7 @@ fn pygate_to_native(pygate: &PyAny, constant_gates: &mut Vec<Array2<Complex64>>)
                 && ((pygate.hasattr("get_grad")? && pygate.hasattr("get_unitary_and_grad")?)
                     || pygate.hasattr("optimize")?)
             {
-                let dynamic: Rc<dyn DynGate> = Rc::new(PyGate::new(pygate.into()));
+                let dynamic: Arc<dyn DynGate + Send + Sync> = Arc::new(PyGate::new(pygate.into()));
                 Ok(Gate::Dynamic(dynamic))
             } else {
                 Err(exceptions::PyValueError::new_err(format!(

@@ -3,6 +3,7 @@ pub mod gates;
 pub mod instantiators;
 pub mod minimizers;
 pub mod operation;
+pub mod passes;
 mod permutation_matrix;
 #[cfg(feature = "python")]
 mod python;
