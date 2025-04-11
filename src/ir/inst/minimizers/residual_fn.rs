@@ -343,7 +343,7 @@ impl ResidualFn for SmallestNResidualFn {
 impl DifferentiableResidualFn for SmallestNResidualFn {
     fn get_grad(&self, params: &[f64]) -> Array2<f64> {
         if self.n < 1 {
-            Array2::<f64>::zeros((0,0).f())
+            Array2::<f64>::zeros((0,params.len()).f())
         } else {
             let deviation = get_deviation_arr(params, self.period);
             let grad = get_deviation_arr_grad(params, self.period);

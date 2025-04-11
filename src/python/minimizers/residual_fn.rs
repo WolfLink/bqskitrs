@@ -176,8 +176,8 @@ pub struct PySmallestNResidualFn {
 #[pymethods]
 impl PySmallestNResidualFn {
     #[new]
-    pub fn new(f: ResidualFunction, g: ResidualFunction) -> PyResult<Self> {
-        let cost_fn = Box::new(SmallestNResidualFn::new(f, g));
+    pub fn new(n: i64, period: f64, dim: i64) -> PyResult<Self> {
+        let cost_fn = Box::new(SmallestNResidualFn::new(n, period, dim));
         Ok(PySmallestNResidualFn {cost_fn: ResidualFunction::SmallestN(cost_fn)})
     }
 
