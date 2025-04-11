@@ -9,3 +9,4 @@ pub use crate::python::minimizers::cost_fn::PyHilberSchmidtCostFn;
 
 pub use crate::python::minimizers::ceres::PyCeresJacSolver;
 pub use crate::python::minimizers::residual_fn::PyHilberSchmidtResidualFn;
+pub use crate::python::minimizers::residual_fn::PySumResidualFn;

@@ -1,7 +1,7 @@
 use crate::{
     ir::circuit::Circuit,
     ir::inst::minimizers::{
-        CostFn, DifferentiableResidualFn, HilbertSchmidtResidualFn, ResidualFn, ResidualFunction, HilbertSchmidtStateResidualFn, HilbertSchmidtSystemResidualFn,
+        CostFn, DifferentiableResidualFn, HilbertSchmidtResidualFn, ResidualFn, ResidualFunction, HilbertSchmidtStateResidualFn, HilbertSchmidtSystemResidualFn, SumResidualFn,
     },
 };
 use ndarray::Array2;
@@ -139,6 +139,10 @@ impl PyHilberSchmidtResidualFn {
         self.cost_fn.get_cost(&params)
     }
 
+    pub fn num_residuals(&self, _py: Python) -> usize {
+        self.cost_fn.num_residuals()
+    }
+
     pub fn get_residuals(&self, _py: Python, params: Vec<f64>) -> Vec<f64> {
         self.cost_fn.get_residuals(&params)
     }
@@ -156,6 +160,59 @@ impl PyHilberSchmidtResidualFn {
         (residuals, grad.into_pyarray(py).to_owned())
     }
 }
+
+// NTRORS
+
+#[pyclass(
+    name = "SumResidualsFunction",
+    subclass,
+    unsendable,
+    module = "bqskitrs"
+)]
+pub struct PySumResidualFn {
+    cost_fn: ResidualFunction,
+}
+
+#[pymethods]
+impl PySumResidualFn {
+    #[new]
+    pub fn new(f: ResidualFunction, g: ResidualFunction) -> PyResult<Self> {
+        let cost_fn = Box::new(SumResidualFn::new(f, g));
+        Ok(PySumResidualFn {cost_fn: ResidualFunction::Sum(cost_fn)})
+    }
+
+    pub fn __call__(&self, py: Python, params: Vec<f64>) -> Vec<f64> {
+        self.get_residuals(py, params)
+    }
+
+    pub fn num_residuals(&self, _py: Python) -> usize {
+        self.cost_fn.num_residuals()
+    }
+
+    pub fn get_cost(&self, _py: Python, params: Vec<f64>) -> f64 {
+        self.cost_fn.get_cost(&params)
+    }
+
+    pub fn get_residuals(&self, _py: Python, params: Vec<f64>) -> Vec<f64> {
+        self.cost_fn.get_residuals(&params)
+    }
+
+    pub fn get_grad(&self, py: Python, params: Vec<f64>) -> Py<PyArray2<f64>> {
+        PyArray2::from_array(py, &self.cost_fn.get_grad(&params)).to_owned()
+    }
+
+    pub fn get_residuals_and_grad(
+        &self,
+        py: Python,
+        params: Vec<f64>,
+    ) -> (Vec<f64>, Py<PyArray2<f64>>) {
+        let (residuals, grad) = self.cost_fn.get_residuals_and_grad(&params);
+        (residuals, grad.into_pyarray(py).to_owned())
+    }
+}
+
+// END NTRORS
+
 
 fn is_cost_fn_obj(obj: &'_ PyAny) -> PyResult<bool> {
     if obj.hasattr("get_cost")? {

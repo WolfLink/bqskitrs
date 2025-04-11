@@ -26,6 +26,7 @@ mod gate;
 fn bqskitrs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyHilberSchmidtCostFn>()?;
     m.add_class::<PyHilberSchmidtResidualFn>()?;
+    m.add_class::<PySumResidualFn>()?;
     m.add_class::<PyBfgsJacSolver>()?;
     m.add_class::<PyCeresJacSolver>()?;
     m.add_class::<PyCircuit>()?;

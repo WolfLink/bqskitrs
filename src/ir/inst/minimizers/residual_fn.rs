@@ -1,4 +1,4 @@
-use ndarray::{Array2, Array1};
+use ndarray::{Array2, Array1, concatenate, Axis};
 use ndarray_linalg::c64;
 use ndarray_einsum_beta::einsum;
 use crate::squaremat::*;
@@ -238,10 +238,71 @@ impl DifferentiableResidualFn for HilbertSchmidtSystemResidualFn {
     }
 }
 
+// NTRORS Residuals Functions
+
+pub struct SumResidualFn {
+    f: ResidualFunction,
+    g: ResidualFunction,
+}
+
+impl SumResidualFn {
+    pub fn new(f: ResidualFunction, g: ResidualFunction) -> Self {
+        SumResidualFn {
+            f,
+            g,
+        }
+    }
+
+    pub fn is_sendable(&self) -> bool {
+        self.f.is_sendable() && self.g.is_sendable()
+    }
+}
+
+impl CostFn for SumResidualFn {
+    fn get_cost(&self, params: &[f64]) -> f64 {
+        self.f.get_cost(params) + self.g.get_cost(params)
+    }
+}
+
+impl ResidualFn for SumResidualFn {
+    fn get_residuals(&self, params: &[f64]) -> Vec<f64> {
+        let mut res = self.f.get_residuals(params);
+        res.extend(self.g.get_residuals(params));
+        res
+    }
+
+    fn num_residuals(&self) -> usize {
+        self.f.num_residuals() + self.g.num_residuals()
+    }
+}
+
+impl DifferentiableResidualFn for SumResidualFn {
+    fn get_grad(&self, params: &[f64]) -> Array2<f64> {
+        let gf = self.f.get_grad(params);
+        let gg = self.g.get_grad(params);
+        concatenate![Axis(0), gf, gg]
+    }
+
+    fn get_residuals_and_grad(&self, params: &[f64]) -> (Vec<f64>, Array2<f64>) {
+        let (mut rf, gf) = self.f.get_residuals_and_grad(params);
+        let (rg, gg) = self.g.get_residuals_and_grad(params);
+        rf.extend(rg);
+        (rf, concatenate![Axis(0), gf, gg])
+    }
+}
+
+
+
+
+// END NTRORS
+
+
+
 pub enum ResidualFunction {
     HilbertSchmidtSystem(Box<HilbertSchmidtSystemResidualFn>),
     HilbertSchmidtState(Box<HilbertSchmidtStateResidualFn>),
     HilbertSchmidt(Box<HilbertSchmidtResidualFn>),
+    Sum(Box<SumResidualFn>),
     Dynamic(Box<dyn DifferentiableResidualFn>),
 }
 
@@ -251,6 +312,7 @@ impl ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.is_sendable(),
             Self::HilbertSchmidtState(hs) => hs.is_sendable(),
             Self::HilbertSchmidt(hs) => hs.is_sendable(),
+            Self::Sum(s) => s.is_sendable(),
             Self::Dynamic(_) => false,
         }
     }
@@ -262,6 +324,7 @@ impl CostFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_cost(params),
             Self::HilbertSchmidtState(hs) => hs.get_cost(params),
             Self::HilbertSchmidt(hs) => hs.get_cost(params),
+            Self::Sum(s) => s.get_cost(params),
             Self::Dynamic(d) => d.get_cost(params),
         }
     }
@@ -273,6 +336,7 @@ impl ResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_residuals(params),
             Self::HilbertSchmidtState(hs) => hs.get_residuals(params),
             Self::HilbertSchmidt(hs) => hs.get_residuals(params),
+            Self::Sum(s) => s.get_residuals(params),
             Self::Dynamic(d) => d.get_residuals(params),
         }
     }
@@ -282,6 +346,7 @@ impl ResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.num_residuals(),
             Self::HilbertSchmidtState(hs) => hs.num_residuals(),
             Self::HilbertSchmidt(hs) => hs.num_residuals(),
+            Self::Sum(s) => s.num_residuals(),
             Self::Dynamic(d) => d.num_residuals(),
         }
     }
@@ -293,6 +358,7 @@ impl DifferentiableResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_grad(params),
             Self::HilbertSchmidtState(hs) => hs.get_grad(params),
             Self::HilbertSchmidt(hs) => hs.get_grad(params),
+            Self::Sum(s) => s.get_grad(params),
             Self::Dynamic(d) => d.get_grad(params),
         }
     }
@@ -302,6 +368,7 @@ impl DifferentiableResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_residuals_and_grad(params),
             Self::HilbertSchmidtState(hs) => hs.get_residuals_and_grad(params),
             Self::HilbertSchmidt(hs) => hs.get_residuals_and_grad(params),
+            Self::Sum(s) => s.get_residuals_and_grad(params),
             Self::Dynamic(d) => d.get_residuals_and_grad(params),
         }
     }
