@@ -1,7 +1,7 @@
 use crate::{
     ir::circuit::Circuit,
     ir::inst::minimizers::{
-        CostFn, DifferentiableResidualFn, HilbertSchmidtResidualFn, ResidualFn, ResidualFunction, HilbertSchmidtStateResidualFn, HilbertSchmidtSystemResidualFn, SumResidualFn,
+        CostFn, DifferentiableResidualFn, HilbertSchmidtResidualFn, ResidualFn, ResidualFunction, HilbertSchmidtStateResidualFn, HilbertSchmidtSystemResidualFn, SumResidualFn, SmallestNResidualFn,
     },
 };
 use ndarray::Array2;
@@ -162,6 +162,54 @@ impl PyHilberSchmidtResidualFn {
 }
 
 // NTRORS
+
+#[pyclass(
+    name = "SmallestNResidualsFunction",
+    subclass,
+    unsendable,
+    module = "bqskitrs"
+)]
+pub struct PySmallestNResidualFn {
+    cost_fn: ResidualFunction,
+}
+
+#[pymethods]
+impl PySmallestNResidualFn {
+    #[new]
+    pub fn new(f: ResidualFunction, g: ResidualFunction) -> PyResult<Self> {
+        let cost_fn = Box::new(SmallestNResidualFn::new(f, g));
+        Ok(PySmallestNResidualFn {cost_fn: ResidualFunction::SmallestN(cost_fn)})
+    }
+
+    pub fn __call__(&self, py: Python, params: Vec<f64>) -> Vec<f64> {
+        self.get_residuals(py, params)
+    }
+
+    pub fn num_residuals(&self, _py: Python) -> usize {
+        self.cost_fn.num_residuals()
+    }
+
+    pub fn get_cost(&self, _py: Python, params: Vec<f64>) -> f64 {
+        self.cost_fn.get_cost(&params)
+    }
+
+    pub fn get_residuals(&self, _py: Python, params: Vec<f64>) -> Vec<f64> {
+        self.cost_fn.get_residuals(&params)
+    }
+
+    pub fn get_grad(&self, py: Python, params: Vec<f64>) -> Py<PyArray2<f64>> {
+        PyArray2::from_array(py, &self.cost_fn.get_grad(&params)).to_owned()
+    }
+
+    pub fn get_residuals_and_grad(
+        &self,
+        py: Python,
+        params: Vec<f64>,
+    ) -> (Vec<f64>, Py<PyArray2<f64>>) {
+        let (residuals, grad) = self.cost_fn.get_residuals_and_grad(&params);
+        (residuals, grad.into_pyarray(py).to_owned())
+    }
+}
 
 #[pyclass(
     name = "SumResidualsFunction",

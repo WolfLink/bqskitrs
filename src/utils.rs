@@ -153,3 +153,11 @@ pub fn matrix_residuals_jac(
     }
     out.reversed_axes()
 }
+
+/// NTRORS Helper Functions
+pub fn get_deviation_arr(params: &[f64], period: f64) -> Vec<f64> {
+    Vec::<f64>::from_iter(params.iter().map(|&x| ((x - period / 2.0) % period - period / 2.0).abs() / 2.0))
+}
+pub fn get_deviation_arr_grad(params: &[f64], period: f64) -> Vec<f64> {
+    Vec::<f64>::from_iter(params.iter().map(|&x| ((x - period / 2.0) % period - period / 2.0).signum() * 0.5))
+}

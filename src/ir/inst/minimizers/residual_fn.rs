@@ -1,12 +1,13 @@
-use ndarray::{Array2, Array1, concatenate, Axis};
+use ndarray::{Array2, Array1, concatenate, Axis, ShapeBuilder};
 use ndarray_linalg::c64;
 use ndarray_einsum_beta::einsum;
 use crate::squaremat::*;
+use itertools::Itertools;
 
 use crate::{
     ir::circuit::Circuit,
     ir::gates::{Gradient, Unitary},
-    utils::{matrix_distance_squared, matrix_residuals, matrix_residuals_jac, state_infidelity, state_residuals, state_residuals_jac},
+    utils::{matrix_distance_squared, matrix_residuals, matrix_residuals_jac, state_infidelity, state_residuals, state_residuals_jac, get_deviation_arr, get_deviation_arr_grad},
 };
 
 use enum_dispatch::enum_dispatch;
@@ -291,6 +292,76 @@ impl DifferentiableResidualFn for SumResidualFn {
     }
 }
 
+pub struct SmallestNResidualFn {
+    n: usize,
+    period: f64,
+    dim: f64,
+}
+
+impl SmallestNResidualFn {
+    pub fn new(n: i64, period: f64, dim: i64) -> Self {
+        SmallestNResidualFn {
+            n: n as usize,
+            period,
+            dim: dim as f64,
+        }
+    }
+
+    pub fn is_sendable(&self) -> bool {
+        true
+    }
+}
+
+impl CostFn for SmallestNResidualFn {
+    fn get_cost(&self, params: &[f64]) -> f64 {
+        let residuals = self.get_residuals(params);
+        residuals.iter().map(|&x| x * x).sum()
+    }
+}
+
+impl ResidualFn for SmallestNResidualFn {
+    fn get_residuals(&self, params: &[f64]) -> Vec<f64> {
+        if self.n < 1 {
+            Vec::<f64>::new()
+        } else {
+            let mut deviation = get_deviation_arr(params, self.period);
+            deviation.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            deviation.truncate(self.n);
+            deviation.shrink_to_fit();
+            for x in deviation.iter_mut() {
+                *x *= self.dim;
+            }
+            deviation
+        }
+    }
+
+    fn num_residuals(&self) -> usize {
+        self.n
+    }
+}
+
+impl DifferentiableResidualFn for SmallestNResidualFn {
+    fn get_grad(&self, params: &[f64]) -> Array2<f64> {
+        if self.n < 1 {
+            Array2::<f64>::zeros((0,0).f())
+        } else {
+            let deviation = get_deviation_arr(params, self.period);
+            let grad = get_deviation_arr_grad(params, self.period);
+            let indices: Vec<usize> = deviation.iter().enumerate().sorted_by(|(_idx_a, a), (_idx_b, b)| a.partial_cmp(b).unwrap()).map(|(idx, _a)| idx).collect();
+            let mut output = Array2::<f64>::zeros((self.n, params.len()).f());
+            for i in 0..self.n {
+                let j = indices[i];
+                output[[i, j]] = grad[j] * self.dim;
+            }
+            output
+        }
+    }
+
+    fn get_residuals_and_grad(&self, params: &[f64]) -> (Vec<f64>, Array2<f64>) {
+        (self.get_residuals(params), self.get_grad(params))
+    }
+}
+
 
 
 
@@ -302,6 +373,7 @@ pub enum ResidualFunction {
     HilbertSchmidtSystem(Box<HilbertSchmidtSystemResidualFn>),
     HilbertSchmidtState(Box<HilbertSchmidtStateResidualFn>),
     HilbertSchmidt(Box<HilbertSchmidtResidualFn>),
+    SmallestN(Box<SmallestNResidualFn>),
     Sum(Box<SumResidualFn>),
     Dynamic(Box<dyn DifferentiableResidualFn>),
 }
@@ -312,6 +384,7 @@ impl ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.is_sendable(),
             Self::HilbertSchmidtState(hs) => hs.is_sendable(),
             Self::HilbertSchmidt(hs) => hs.is_sendable(),
+            Self::SmallestN(s) => s.is_sendable(),
             Self::Sum(s) => s.is_sendable(),
             Self::Dynamic(_) => false,
         }
@@ -324,6 +397,7 @@ impl CostFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_cost(params),
             Self::HilbertSchmidtState(hs) => hs.get_cost(params),
             Self::HilbertSchmidt(hs) => hs.get_cost(params),
+            Self::SmallestN(s) => s.get_cost(params),
             Self::Sum(s) => s.get_cost(params),
             Self::Dynamic(d) => d.get_cost(params),
         }
@@ -336,6 +410,7 @@ impl ResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_residuals(params),
             Self::HilbertSchmidtState(hs) => hs.get_residuals(params),
             Self::HilbertSchmidt(hs) => hs.get_residuals(params),
+            Self::SmallestN(s) => s.get_residuals(params),
             Self::Sum(s) => s.get_residuals(params),
             Self::Dynamic(d) => d.get_residuals(params),
         }
@@ -346,6 +421,7 @@ impl ResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.num_residuals(),
             Self::HilbertSchmidtState(hs) => hs.num_residuals(),
             Self::HilbertSchmidt(hs) => hs.num_residuals(),
+            Self::SmallestN(s) => s.num_residuals(),
             Self::Sum(s) => s.num_residuals(),
             Self::Dynamic(d) => d.num_residuals(),
         }
@@ -358,6 +434,7 @@ impl DifferentiableResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_grad(params),
             Self::HilbertSchmidtState(hs) => hs.get_grad(params),
             Self::HilbertSchmidt(hs) => hs.get_grad(params),
+            Self::SmallestN(s) => s.get_grad(params),
             Self::Sum(s) => s.get_grad(params),
             Self::Dynamic(d) => d.get_grad(params),
         }
@@ -368,6 +445,7 @@ impl DifferentiableResidualFn for ResidualFunction {
             Self::HilbertSchmidtSystem(hs) => hs.get_residuals_and_grad(params),
             Self::HilbertSchmidtState(hs) => hs.get_residuals_and_grad(params),
             Self::HilbertSchmidt(hs) => hs.get_residuals_and_grad(params),
+            Self::SmallestN(s) => s.get_residuals_and_grad(params),
             Self::Sum(s) => s.get_residuals_and_grad(params),
             Self::Dynamic(d) => d.get_residuals_and_grad(params),
         }
