@@ -10,7 +10,6 @@ use bqskitrs::r;
 use ndarray::{Array, Array2};
 use ndarray_linalg::c64;
 use rand::distr::Uniform;
-use rayon::prelude::*;
 
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
